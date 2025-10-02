@@ -40,3 +40,7 @@ Once the SDK is installed and the environment variables are exported, you can bu
 
 Both commands should complete successfully, producing a debug APK under `app/build/outputs/apk/debug/` and executing the unit test suite.
 
+
+## Additional resources
+
+- [Android SDK setup and unit test execution notes](docs/android-sdk-setup-and-testing.md) – step-by-step commands and troubleshooting tips captured during the latest validation run.
