@@ -11,27 +11,35 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import coil.ImageLoader
 import coil.compose.rememberAsyncImagePainter
 import coil.decode.GifDecoder
@@ -39,8 +47,17 @@ import coil.decode.ImageDecoderDecoder
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.example.giffer2.ui.theme.Giffer2Theme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import android.os.Build
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.widget.MediaController
+import android.widget.VideoView
+import androidx.compose.ui.viewinterop.AndroidView
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,8 +78,10 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
     var videoUri by remember { mutableStateOf<Uri?>(null) }
     var gifPath by remember { mutableStateOf<String?>(null) }
     var conversionStatus by remember { mutableStateOf("") }
+    var saveStatus by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val selectVideoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -70,6 +89,7 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
             videoUri = uri
             gifPath = null // Reset previous GIF path
             conversionStatus = ""
+            saveStatus = ""
         }
     )
 
@@ -85,7 +105,9 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
         .build()
 
     Column(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -96,10 +118,13 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
         videoUri?.let { uri ->
             Text("Selected: ${getFileName(context, uri) ?: "Unknown file"}")
             Spacer(modifier = Modifier.height(16.dp))
+            VideoPreview(uri = uri)
+            Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = {
                 isLoading = true
                 conversionStatus = "Converting..."
                 gifPath = null
+                saveStatus = ""
                 convertVideoToGif(context, uri) { outputPath, error ->
                     isLoading = false
                     if (outputPath != null) {
@@ -122,15 +147,157 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
         } else if (gifPath != null) {
             Text(conversionStatus)
             Spacer(modifier = Modifier.height(8.dp))
-            Image(
-                painter = rememberAsyncImagePainter(File(gifPath!!), imageLoader),
-                contentDescription = "Generated GIF",
-                modifier = Modifier.size(200.dp) // Adjust size as needed
-            )
-            Text("GIF saved to: $gifPath")
+            GifPreview(gifPath = gifPath!!, imageLoader = imageLoader)
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = {
+                val file = File(gifPath!!)
+                if (!file.exists()) {
+                    saveStatus = "GIF file missing."
+                    return@Button
+                }
+                scope.launch {
+                    saveStatus = "Saving..."
+                    val result = withContext(Dispatchers.IO) {
+                        saveGifToGallery(context, file)
+                    }
+                    saveStatus = result.fold(
+                        onSuccess = { savedUri -> "GIF saved to gallery. Location: $savedUri" },
+                        onFailure = { throwable ->
+                            Log.e("SaveGif", "Failed to save GIF", throwable)
+                            "Failed to save GIF: ${throwable.message ?: "Unknown error"}"
+                        }
+                    )
+                }
+            }) {
+                Text("Save GIF")
+            }
+            if (saveStatus.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(saveStatus)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Temporary file: $gifPath")
         } else {
             Text(conversionStatus)
         }
+    }
+}
+
+@Composable
+fun VideoPreview(uri: Uri, modifier: Modifier = Modifier) {
+    val videoViewHolder = remember { mutableStateOf<VideoView?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose { videoViewHolder.value?.stopPlayback() }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                VideoView(context).apply {
+                    val controller = MediaController(context)
+                    controller.setAnchorView(this)
+                    setMediaController(controller)
+                    tag = uri.toString()
+                    setVideoURI(uri)
+                    setOnPreparedListener { mediaPlayer ->
+                        mediaPlayer.isLooping = true
+                        start()
+                        seekTo(1)
+                    }
+                    videoViewHolder.value = this
+                }
+            },
+            update = { view ->
+                videoViewHolder.value = view
+                if (view.tag != uri.toString()) {
+                    view.tag = uri.toString()
+                    view.setVideoURI(uri)
+                }
+                view.setOnPreparedListener { mediaPlayer ->
+                    mediaPlayer.isLooping = true
+                    view.start()
+                    view.seekTo(1)
+                }
+                if (!view.isPlaying) {
+                    view.start()
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun GifPreview(gifPath: String, imageLoader: ImageLoader, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = rememberAsyncImagePainter(File(gifPath), imageLoader),
+            contentDescription = "Generated GIF preview",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit
+        )
+    }
+}
+
+fun saveGifToGallery(context: Context, gifFile: File): Result<Uri> {
+    return runCatching {
+        if (!gifFile.exists() || !gifFile.canRead()) {
+            throw IllegalArgumentException("GIF file is not accessible.")
+        }
+
+        val resolver = context.contentResolver
+        val displayName = "GIF_${System.currentTimeMillis()}"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$displayName.gif")
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/gif")
+            put(MediaStore.MediaColumns.SIZE, gifFile.length())
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    "${android.os.Environment.DIRECTORY_PICTURES}/Giffer"
+                )
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+
+        val collectionUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val savedUri = resolver.insert(collectionUri, contentValues)
+            ?: throw IllegalStateException("Unable to create MediaStore entry.")
+
+        resolver.openOutputStream(savedUri)?.use { outputStream ->
+            gifFile.inputStream().use { inputStream ->
+                inputStream.copyTo(outputStream)
+            }
+        } ?: throw IllegalStateException("Unable to open output stream for GIF.")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val pendingUpdate = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(savedUri, pendingUpdate, null, null)
+        }
+
+        savedUri
     }
 }
 
