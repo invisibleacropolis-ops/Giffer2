@@ -20,15 +20,21 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,6 +52,7 @@ import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
+import com.arthenica.ffmpegkit.Statistics
 import com.example.giffer2.ui.theme.Giffer2Theme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,6 +65,8 @@ import android.provider.MediaStore
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.compose.ui.viewinterop.AndroidView
+import android.os.Handler
+import android.os.Looper
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,6 +89,8 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
     var conversionStatus by remember { mutableStateOf("") }
     var saveStatus by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    val logMessages = remember { mutableStateListOf<String>() }
+    var isLogExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -90,6 +101,8 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
             gifPath = null // Reset previous GIF path
             conversionStatus = ""
             saveStatus = ""
+            logMessages.clear()
+            isLogExpanded = false
         }
     )
 
@@ -125,7 +138,20 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
                 conversionStatus = "Converting..."
                 gifPath = null
                 saveStatus = ""
-                convertVideoToGif(context, uri) { outputPath, error ->
+                logMessages.clear()
+                isLogExpanded = true
+                convertVideoToGif(
+                    context = context,
+                    videoUri = uri,
+                    onLog = { message ->
+                        if (message.isNotBlank()) {
+                            logMessages.add(message)
+                            while (logMessages.size > 500) {
+                                logMessages.removeAt(0)
+                            }
+                        }
+                    }
+                ) { outputPath, error ->
                     isLoading = false
                     if (outputPath != null) {
                         gifPath = outputPath
@@ -179,6 +205,39 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
             Text("Temporary file: $gifPath")
         } else {
             Text(conversionStatus)
+        }
+
+        if (logMessages.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { isLogExpanded = !isLogExpanded }) {
+                Text(if (isLogExpanded) "Hide FFmpeg Logs" else "Show FFmpeg Logs")
+            }
+            if (isLogExpanded) {
+                val logScrollState = rememberScrollState()
+                LaunchedEffect(logMessages.size) {
+                    logScrollState.animateScrollTo(logScrollState.maxValue)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 150.dp, max = 300.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    tonalElevation = 2.dp
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(logScrollState)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        logMessages.forEach { logLine ->
+                            Text(logLine)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -316,10 +375,26 @@ fun getFileName(context: Context, uri: Uri): String? {
     return uri.path?.substringAfterLast('/')
 }
 
-fun convertVideoToGif(context: Context, videoUri: Uri, callback: (String?, String?) -> Unit) {
+fun convertVideoToGif(
+    context: Context,
+    videoUri: Uri,
+    onLog: (String) -> Unit,
+    callback: (String?, String?) -> Unit
+) {
+    val mainHandler = Handler(Looper.getMainLooper())
+
+    fun postLog(message: String) {
+        mainHandler.post { onLog(message) }
+        Log.d("FFmpegKit", message)
+    }
+
+    fun postResult(path: String?, error: String?) {
+        mainHandler.post { callback(path, error) }
+    }
+
     val tempVideoFile = createTempFileFromUri(context, videoUri, "input_video")
     if (tempVideoFile == null) {
-        callback(null, "Failed to create temporary video file from URI.")
+        postResult(null, "Failed to create temporary video file from URI.")
         return
     }
 
@@ -337,42 +412,58 @@ fun convertVideoToGif(context: Context, videoUri: Uri, callback: (String?, Strin
     // flags=lanczos: lanczos resampling algorithm for scaling, good quality
     val command = "-i \"${tempVideoFile.absolutePath}\" -vf \"fps=10,scale=320:-1:flags=lanczos\" -c:v gif -y \"$outputPath\""
 
-    Log.d("FFmpegKit", "Executing command: $command")
+    postLog("Temporary input copied to: ${tempVideoFile.absolutePath}")
+    postLog("GIF will be written to: $outputPath")
+    postLog("Executing command: $command")
 
-    FFmpegKit.executeAsync(command) { session ->
-        val returnCode = session.returnCode
-        val logs = session.allLogsAsString
-        Log.d("FFmpegKit", "FFmpeg process exited with state ${session.state} and rc ${returnCode}.")
-        Log.d("FFmpegKit", "Logs:\n$logs")
+    FFmpegKit.executeAsync(
+        command,
+        { session ->
+            val returnCode = session.returnCode
+            postLog("FFmpeg process exited with state ${session.state} and rc $returnCode")
 
-        tempVideoFile.delete() // Clean up temp video file
+            tempVideoFile.delete() // Clean up temp video file
 
-        if (ReturnCode.isSuccess(returnCode)) {
-            Log.i("FFmpegKit", "GIF conversion successful: $outputPath")
-            callback(outputPath, null)
-        } else if (ReturnCode.isCancel(returnCode)) {
-            Log.w("FFmpegKit", "GIF conversion cancelled.")
-            callback(null, "Conversion cancelled.")
-        } else {
-            Log.e("FFmpegKit", "GIF conversion failed. RC: $returnCode. Error: ${session.failStackTrace}")
-            callback(null, "Conversion failed (RC: $returnCode). Check logs.")
+            if (ReturnCode.isSuccess(returnCode)) {
+                postLog("GIF conversion successful: $outputPath")
+                postResult(outputPath, null)
+            } else if (ReturnCode.isCancel(returnCode)) {
+                postLog("GIF conversion cancelled.")
+                postResult(null, "Conversion cancelled.")
+            } else {
+                postLog("GIF conversion failed. RC: $returnCode. Error: ${session.failStackTrace}")
+                postResult(null, "Conversion failed (RC: $returnCode). Check logs.")
+            }
+        },
+        { log ->
+            log.message?.let { message ->
+                if (message.isNotBlank()) {
+                    postLog(message)
+                }
+            }
+        },
+        { statistics: Statistics ->
+            postLog(
+                "Statistics - time: ${statistics.time}, bitrate: ${statistics.bitrate}, " +
+                    "speed: ${statistics.speed}, frame: ${statistics.videoFrameNumber}"
+            )
         }
-    }
+    )
 }
 
 fun createTempFileFromUri(context: Context, uri: Uri, prefix: String): File? {
     return try {
-        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-        val extension = getFileExtensionFromUri(context, uri) ?: "tmp"
-        // Ensure a valid extension, default to .tmp if URI doesn't provide one
-        val safeExtension = if (extension.isBlank() || extension.length > 5) "tmp" else extension
-        val tempFile = File.createTempFile("${prefix}_", ".$safeExtension", context.cacheDir)
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            val extension = getFileExtensionFromUri(context, uri) ?: "tmp"
+            // Ensure a valid extension, default to .tmp if URI doesn't provide one
+            val safeExtension = if (extension.isBlank() || extension.length > 5) "tmp" else extension
+            val tempFile = File.createTempFile("${prefix}_", ".$safeExtension", context.cacheDir)
 
-        FileOutputStream(tempFile).use { fos ->
-            inputStream.copyTo(fos)
+            FileOutputStream(tempFile).use { fos ->
+                inputStream.copyTo(fos)
+            }
+            tempFile
         }
-        inputStream.close()
-        tempFile
     } catch (e: Exception) {
         Log.e("CreateTempFile", "Error creating temp file from URI: $uri", e)
         null
