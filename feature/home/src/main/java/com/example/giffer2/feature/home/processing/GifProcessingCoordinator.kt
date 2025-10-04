@@ -11,10 +11,10 @@ import android.util.Base64
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.FileProvider
 import androidx.work.Data
+import androidx.lifecycle.Observer
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import androidx.work.getWorkInfoByIdFlow
 import androidx.work.workDataOf
 import com.example.gifvision.GifExportTarget
 import com.example.gifvision.BlendMode
@@ -46,9 +46,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -232,7 +235,7 @@ class GifProcessingCoordinator(
     private fun observeWork(workId: UUID, progressState: MutableStateFlow<GifWorkProgress>) {
         val observerJob = coordinatorScope.launch {
             try {
-                workManager.getWorkInfoByIdFlow(workId).collect { workInfo ->
+                workManager.workInfoFlow(workId).collect { workInfo ->
                     val previous = progressState.value
                     val progress = workInfo.toGifWorkProgress(previous)
                     progressState.value = progress
@@ -482,6 +485,15 @@ class GifProcessingCoordinator(
         private const val LOG_HISTORY_LIMIT = 50
         private const val DEFAULT_MASTER_LABEL = "Master Blend"
     }
+}
+
+private fun WorkManager.workInfoFlow(workId: UUID): Flow<WorkInfo> = callbackFlow {
+    val liveData = getWorkInfoByIdLiveData(workId)
+    val observer = Observer<WorkInfo> { workInfo ->
+        trySend(workInfo)
+    }
+    liveData.observeForever(observer)
+    awaitClose { liveData.removeObserver(observer) }
 }
 
 /**
