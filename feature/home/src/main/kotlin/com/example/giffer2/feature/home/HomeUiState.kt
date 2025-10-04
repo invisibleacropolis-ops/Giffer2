@@ -4,6 +4,7 @@ import android.net.Uri
 import com.example.gifvision.BlendMode
 import com.example.gifvision.ClipMetadata
 import com.example.gifvision.EffectSettings
+import com.example.gifvision.GifExportTarget
 import com.example.gifvision.GifReference
 import com.example.gifvision.GifWorkProgress
 import com.example.gifvision.LayerId
@@ -30,8 +31,9 @@ data class HomeUiState(
     val hasErrors: Boolean = false,
     val showWarningBadge: Boolean = false,
     val showErrorBadge: Boolean = false,
-    val pendingSaveRequest: ExportTarget? = null,
-    val pendingShareRequest: ExportTarget? = null
+    val pendingSaveRequest: GifExportTarget? = null,
+    val pendingShareRequest: GifExportTarget? = null,
+    val activeExports: Set<GifExportTarget> = emptySet()
 ) {
     companion object {
         /** Factory used for previews/tests so callers get deterministic state. */
@@ -163,16 +165,4 @@ data class MasterBlendUiState(
 ) {
     val isGenerating: Boolean
         get() = progress?.let { it.stage != GifWorkProgress.Stage.COMPLETED && it.percent < 100 } ?: false
-}
-
-/**
- * Targets that can trigger save/share actions from the UI.  The view model
- * updates [HomeUiState.pendingSaveRequest] or
- * [HomeUiState.pendingShareRequest] with one of these targets so higher layers
- * can react to the intent exactly once.
- */
-sealed interface ExportTarget {
-    data class Stream(val streamId: StreamId) : ExportTarget
-    data class LayerBlend(val layerId: LayerId) : ExportTarget
-    data object MasterBlend : ExportTarget
 }

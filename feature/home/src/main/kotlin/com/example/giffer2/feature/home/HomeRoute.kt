@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.widget.MediaController
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -47,6 +48,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,10 +67,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.giffer2.feature.home.processing.GifProcessingCoordinator
+import com.example.giffer2.feature.home.rememberShareSheetLauncher
 import com.example.gifvision.BlendMode
 import com.example.gifvision.ClipMetadata
 import com.example.gifvision.ClipTrim
-import com.example.gifvision.ExportTarget
+import com.example.gifvision.GifExportTarget
 import com.example.gifvision.GifReference
 import com.example.gifvision.LayerId
 import com.example.gifvision.LogEntry
@@ -90,6 +93,49 @@ fun HomeRoute(
     val uiState by viewModel.uiState.collectAsState()
     val scope = rememberCoroutineScope()
     var pendingImportLayer by remember { mutableStateOf<LayerId?>(null) }
+    val shareLauncher = rememberShareSheetLauncher()
+
+    val pendingSave = uiState.pendingSaveRequest
+    LaunchedEffect(pendingSave) {
+        val target = pendingSave ?: return@LaunchedEffect
+        val message = try {
+            val result = viewModel.save(target)
+            if (result.isSuccess) {
+                val saved = result.getOrThrow()
+                "Saved ${target.displayName} to Downloads as ${saved.fileName}"
+            } else {
+                val error = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                "Failed to save ${target.displayName}: $error"
+            }
+        } finally {
+            viewModel.onExportFinished(target)
+            viewModel.onSaveRequestConsumed()
+        }
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    val pendingShare = uiState.pendingShareRequest
+    LaunchedEffect(pendingShare) {
+        val target = pendingShare ?: return@LaunchedEffect
+        val message = try {
+            val result = viewModel.prepareShare(target)
+            if (result.isSuccess) {
+                val shareResult = result.getOrThrow()
+                if (shareLauncher.launch(shareResult)) {
+                    "Share ready for ${target.displayName}"
+                } else {
+                    "No compatible apps found to share ${target.displayName}"
+                }
+            } else {
+                val error = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
+                "Failed to share ${target.displayName}: $error"
+            }
+        } finally {
+            viewModel.onExportFinished(target)
+            viewModel.onShareRequestConsumed()
+        }
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
 
     val pickVideoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -133,6 +179,7 @@ fun HomeRoute(
                             .fillMaxSize()
                             .verticalScroll(scrollState),
                         layerState = layerState,
+                        activeExports = uiState.activeExports,
                         onBrowseFiles = { layer ->
                             pendingImportLayer = layer
                             pickVideoLauncher.launch(arrayOf("video/*"))
@@ -164,13 +211,13 @@ fun HomeRoute(
                         onFlipHorizontalChanged = viewModel::onFlipHorizontalToggled,
                         onFlipVerticalChanged = viewModel::onFlipVerticalToggled,
                         onGenerateStream = viewModel::onGenerateStream,
-                        onSaveStream = { stream -> viewModel.onSaveRequested(ExportTarget.Stream(stream)) },
-                        onShareStream = { stream -> viewModel.onShareRequested(ExportTarget.Stream(stream)) },
+                        onSaveStream = { stream -> viewModel.onSaveRequested(GifExportTarget.StreamPreview(stream)) },
+                        onShareStream = { stream -> viewModel.onShareRequested(GifExportTarget.StreamPreview(stream)) },
                         onBlendModeChanged = viewModel::onBlendModeChanged,
                         onBlendOpacityChanged = viewModel::onBlendOpacityChanged,
                         onGenerateBlend = viewModel::onGenerateLayerBlend,
-                        onSaveBlend = { layer -> viewModel.onSaveRequested(ExportTarget.LayerBlend(layer)) },
-                        onShareBlend = { layer -> viewModel.onShareRequested(ExportTarget.LayerBlend(layer)) },
+                        onSaveBlend = { layer -> viewModel.onSaveRequested(GifExportTarget.LayerBlend(layer)) },
+                        onShareBlend = { layer -> viewModel.onShareRequested(GifExportTarget.LayerBlend(layer)) },
                         logEntries = uiState.logEntries,
                         isLogExpanded = uiState.isLogExpanded,
                         showWarningBadge = uiState.showWarningBadge,
@@ -188,11 +235,12 @@ fun HomeRoute(
                         .verticalScroll(scrollState),
                     masterBlend = uiState.masterBlend,
                     layers = uiState.layers,
+                    activeExports = uiState.activeExports,
                     onBlendModeChanged = viewModel::onMasterBlendModeChanged,
                     onBlendOpacityChanged = viewModel::onMasterBlendOpacityChanged,
                     onGenerate = viewModel::onGenerateMasterBlend,
-                    onSave = { viewModel.onSaveRequested(ExportTarget.MasterBlend) },
-                    onShare = { viewModel.onShareRequested(ExportTarget.MasterBlend) },
+                    onSave = { viewModel.onSaveRequested(GifExportTarget.MasterBlend) },
+                    onShare = { viewModel.onShareRequested(GifExportTarget.MasterBlend) },
                     logEntries = uiState.logEntries,
                     isLogExpanded = uiState.isLogExpanded,
                     showWarningBadge = uiState.showWarningBadge,
@@ -265,6 +313,7 @@ private fun HomeTopBar(
 private fun LayerPage(
     modifier: Modifier,
     layerState: LayerUiState,
+    activeExports: Set<GifExportTarget>,
     onBrowseFiles: (LayerId) -> Unit,
     onDropUri: (LayerId, Uri) -> Unit,
     onActiveStreamChanged: (LayerId, StreamChannel) -> Unit,
@@ -339,6 +388,7 @@ private fun LayerPage(
 
         StreamPreviewSection(
             layerState = layerState,
+            activeExports = activeExports,
             onGenerateStream = onGenerateStream,
             onSaveStream = onSaveStream,
             onShareStream = onShareStream
@@ -346,6 +396,7 @@ private fun LayerPage(
 
         LayerBlendCard(
             layerState = layerState,
+            activeExports = activeExports,
             onBlendModeChanged = onBlendModeChanged,
             onBlendOpacityChanged = onBlendOpacityChanged,
             onGenerateBlend = onGenerateBlend,
@@ -463,6 +514,7 @@ private fun StreamMetadataSummary(stream: StreamUiState?) {
 @Composable
 private fun StreamPreviewSection(
     layerState: LayerUiState,
+    activeExports: Set<GifExportTarget>,
     onGenerateStream: (StreamId) -> Unit,
     onSaveStream: (StreamId) -> Unit,
     onShareStream: (StreamId) -> Unit
@@ -474,8 +526,11 @@ private fun StreamPreviewSection(
         )
         StreamChannel.entries.forEach { channel ->
             val streamState = layerState.streams[channel] ?: return@forEach
+            val exportTarget = GifExportTarget.StreamPreview(streamState.streamId)
+            val exportEnabled = exportTarget !in activeExports
             StreamPreviewCard(
                 streamState = streamState,
+                isExportEnabled = exportEnabled,
                 onGenerate = { onGenerateStream(streamState.streamId) },
                 onSave = { onSaveStream(streamState.streamId) },
                 onShare = { onShareStream(streamState.streamId) }
@@ -487,6 +542,7 @@ private fun StreamPreviewSection(
 @Composable
 private fun StreamPreviewCard(
     streamState: StreamUiState,
+    isExportEnabled: Boolean,
     onGenerate: () -> Unit,
     onSave: () -> Unit,
     onShare: () -> Unit
@@ -549,10 +605,16 @@ private fun StreamPreviewCard(
                 Button(onClick = onGenerate, enabled = streamState.isGenerateEnabled) {
                     Text("Generate")
                 }
-                OutlinedButton(onClick = onSave, enabled = streamState.previewUri != null) {
+                OutlinedButton(
+                    onClick = onSave,
+                    enabled = streamState.previewUri != null && isExportEnabled
+                ) {
                     Text("Save")
                 }
-                OutlinedButton(onClick = onShare, enabled = streamState.previewUri != null) {
+                OutlinedButton(
+                    onClick = onShare,
+                    enabled = streamState.previewUri != null && isExportEnabled
+                ) {
                     Text("Share")
                 }
             }
@@ -563,6 +625,7 @@ private fun StreamPreviewCard(
 @Composable
 private fun LayerBlendCard(
     layerState: LayerUiState,
+    activeExports: Set<GifExportTarget>,
     onBlendModeChanged: (LayerId, BlendMode) -> Unit,
     onBlendOpacityChanged: (LayerId, Float) -> Unit,
     onGenerateBlend: (LayerId) -> Unit,
@@ -621,14 +684,22 @@ private fun LayerBlendCard(
                 Text(progress.stage.name)
             }
             Spacer(modifier = Modifier.height(12.dp))
+            val exportTarget = GifExportTarget.LayerBlend(layerState.layerId)
+            val exportEnabled = exportTarget !in activeExports
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { onGenerateBlend(layerState.layerId) }, enabled = layerState.blend.isGenerateEnabled) {
                     Text("Generate")
                 }
-                OutlinedButton(onClick = { onSaveBlend(layerState.layerId) }, enabled = layerState.blend.previewUri != null) {
+                OutlinedButton(
+                    onClick = { onSaveBlend(layerState.layerId) },
+                    enabled = layerState.blend.previewUri != null && exportEnabled
+                ) {
                     Text("Save")
                 }
-                OutlinedButton(onClick = { onShareBlend(layerState.layerId) }, enabled = layerState.blend.previewUri != null) {
+                OutlinedButton(
+                    onClick = { onShareBlend(layerState.layerId) },
+                    enabled = layerState.blend.previewUri != null && exportEnabled
+                ) {
                     Text("Share")
                 }
             }
@@ -1046,6 +1117,7 @@ private fun MasterBlendPage(
     modifier: Modifier,
     masterBlend: MasterBlendUiState,
     layers: Map<LayerId, LayerUiState>,
+    activeExports: Set<GifExportTarget>,
     onBlendModeChanged: (BlendMode) -> Unit,
     onBlendOpacityChanged: (Float) -> Unit,
     onGenerate: () -> Unit,
@@ -1107,14 +1179,21 @@ private fun MasterBlendPage(
                     Text(progress.stage.name)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
+                val exportEnabled = GifExportTarget.MasterBlend !in activeExports
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(onClick = onGenerate, enabled = masterBlend.isGenerateEnabled) {
                         Text("Generate")
                     }
-                    OutlinedButton(onClick = onSave, enabled = masterBlend.previewUri != null) {
+                    OutlinedButton(
+                        onClick = onSave,
+                        enabled = masterBlend.previewUri != null && exportEnabled
+                    ) {
                         Text("Save")
                     }
-                    OutlinedButton(onClick = onShare, enabled = masterBlend.previewUri != null) {
+                    OutlinedButton(
+                        onClick = onShare,
+                        enabled = masterBlend.previewUri != null && exportEnabled
+                    ) {
                         Text("Share")
                     }
                 }

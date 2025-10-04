@@ -1,11 +1,13 @@
 package com.example.giffer2.feature.home
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.gifvision.BlendMode
 import com.example.gifvision.ClipMetadata
 import com.example.gifvision.ClipTrim
 import com.example.gifvision.EffectSettings
+import com.example.gifvision.GifExportTarget
 import com.example.gifvision.GifReference
 import com.example.gifvision.GifTranscodeBlueprint
 import com.example.gifvision.GifWorkProgress
@@ -301,12 +303,22 @@ class GifVisionViewModel(
         trackMasterBlendProgress(handle.workId, handle.progress)
     }
 
-    fun onSaveRequested(target: ExportTarget) {
-        _uiState.update { it.copy(pendingSaveRequest = target) }
+    fun onSaveRequested(target: GifExportTarget) {
+        _uiState.update {
+            it.copy(
+                pendingSaveRequest = target,
+                activeExports = it.activeExports + target
+            )
+        }
     }
 
-    fun onShareRequested(target: ExportTarget) {
-        _uiState.update { it.copy(pendingShareRequest = target) }
+    fun onShareRequested(target: GifExportTarget) {
+        _uiState.update {
+            it.copy(
+                pendingShareRequest = target,
+                activeExports = it.activeExports + target
+            )
+        }
     }
 
     fun onSaveRequestConsumed() {
@@ -315,6 +327,32 @@ class GifVisionViewModel(
 
     fun onShareRequestConsumed() {
         _uiState.update { it.copy(pendingShareRequest = null) }
+    }
+
+    fun onExportFinished(target: GifExportTarget) {
+        _uiState.update { state -> state.copy(activeExports = state.activeExports - target) }
+    }
+
+    suspend fun save(target: GifExportTarget): Result<GifProcessingCoordinator.SaveResult> {
+        val sourceUri = resolveExportUri(target)
+            ?: return Result.failure(IllegalStateException("No preview available for ${target.displayName}"))
+        return runCatching { coordinator.saveToDownloads(target, sourceUri) }
+    }
+
+    suspend fun prepareShare(target: GifExportTarget): Result<GifProcessingCoordinator.ShareResult> {
+        val sourceUri = resolveExportUri(target)
+            ?: return Result.failure(IllegalStateException("No preview available for ${target.displayName}"))
+        return runCatching { coordinator.prepareShare(target, sourceUri) }
+    }
+
+    private fun resolveExportUri(target: GifExportTarget): Uri? {
+        val state = _uiState.value
+        return when (target) {
+            is GifExportTarget.StreamPreview ->
+                state.layers[target.streamId.layer]?.streams?.get(target.streamId.channel)?.previewUri
+            is GifExportTarget.LayerBlend -> state.layers[target.layerId]?.blend?.previewUri
+            GifExportTarget.MasterBlend -> state.masterBlend.previewUri
+        }
     }
 
     fun onLogExpandedChanged(isExpanded: Boolean) {
