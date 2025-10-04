@@ -35,4 +35,15 @@ object FfmpegKitInitializer {
             }
         }
     }
+
+    /**
+     * Ensures the FFmpegKit toolchain is initialized before a background worker executes. The
+     * method is safe to call for every WorkManager invocation; initialization only runs once per
+     * process.
+     */
+    fun ensureInitialized(context: Context) {
+        if (!initialized.get()) {
+            initialize(context)
+        }
+    }
 }

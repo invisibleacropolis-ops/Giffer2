@@ -14,6 +14,40 @@ data class LogEntry(
     val workId: UUID? = null
 )
 
+fun LogEntry.toJsonString(): String {
+    val json = org.json.JSONObject()
+    json.put("message", message)
+    json.put("severity", severity.name)
+    json.put("timestamp", timestampMillis)
+    workId?.let { json.put("workId", it.toString()) }
+    return json.toString()
+}
+
+fun logEntryFromJsonString(serialized: String): LogEntry {
+    val json = org.json.JSONObject(serialized)
+    val message = json.optString("message")
+    val severity = json.optString("severity")
+        .takeIf { it.isNotBlank() }
+        ?.let { LogSeverity.valueOf(it) }
+        ?: LogSeverity.INFO
+    val timestamp = json.optLong("timestamp", System.currentTimeMillis())
+    val workId = json.optString("workId")
+        .takeIf { it.isNotBlank() }
+        ?.let(UUID::fromString)
+    return LogEntry(message = message, severity = severity, timestampMillis = timestamp, workId = workId)
+}
+
+fun List<LogEntry>.toJsonArray(): Array<String> = map(LogEntry::toJsonString).toTypedArray()
+
+fun parseLogEntries(serialized: Array<String>?): List<LogEntry> {
+    if (serialized == null) {
+        return emptyList()
+    }
+    return serialized.mapNotNull { entry ->
+        runCatching { logEntryFromJsonString(entry) }.getOrNull()
+    }
+}
+
 /**
  * Snapshot of an end-to-end GIF render request. The blueprint keeps the render inputs together so
  * scheduling, logging, and retry logic can reuse a single identifier.
