@@ -1,0 +1,64 @@
+Architectural Overview The repository is split into four Gradle modules: app for the Android launcher, core:model for shared domain types, core:ffmpeg for background processing, and feature:home for the Compose-driven experience layer.
+Static analysis (Detekt) and formatting (Spotless) are enforced at the root, so engineers should wire them into local IDE workflows or the CI pipeline.
+
+Build & Tooling Baseline The application targets Android SDK 36 with Kotlin 2.0.x, uses Jetpack Compose, and depends on WorkManager plus coroutines for background execution.
+feature:home mirrors those Compose and coroutine dependencies but strips BuildConfig to keep the library lean, while core:ffmpeg stays as a plain Android library that ships only runtime classes and WorkManager workers.
+
+FFmpeg Runtime Provisioning FFmpegKit (the ffmpeg-kit-https 6.0-2.LTS artifact) is the sole runtime dependency. The Android application calls FfmpegKitInitializer from Application.onCreate so the native toolchain is loaded exactly once per process and reused by every worker invocation. No asset management or binary copying is required anymore—the library ships with its own shared objects, and WorkManager jobs automatically execute against the initialized session context.
+Scoped storage guidance in the same checklist explains when additional legacy storage flags or permissions are required for Android 9 and below during QA. See docs/THIRD_PARTY_NOTICES.md for the FFmpegKit license notice that must accompany shipped builds.
+
+Domain Model Reference (core:model) Layers (LayerId), streams (StreamId), blend modes, GIF references, and clip metadata are first-class enums/value classes so UI and workers share the same vocabulary for manual features like multi-layer blending and palette control.
+Resolution, frame rate, colour limits, overlays, and experimental toggles form the EffectSettings aggregate. Use resetForNewSource to rehydrate defaults after a clip swap and defaultSettings() for fresh streams.
+
+GifTranscodeBlueprint snapshots an end-to-end render request, GifWorkProgress/GifWorkTracker expose worker progress to the UI, and sampleBlueprint() seeds previews and tests.
+
+Logging pipelines expect LogEntry with severity levels so UI components can render FFmpeg diagnostics consistently.
+
+FFmpeg Execution Layer (core:ffmpeg) FfmpegKitInitializer plus FfmpegKitCommandRunner wrap FFmpegKit so workers can enqueue argument lists, receive normalized stdout/stderr payloads, and share one initialized native session. This keeps background execution deterministic without leaking FFmpegKit details into higher layers.
+FilterGraphBuilder builds the shared filter chain: trim, setpts, fps, scaling, EQ, optional colour balance/hue, artistic toggles, overlay text, and a terminal format=rgba. Palette and GIF passes append palettegen and paletteuse respectively.
+
+GifGenerationWorker runs the full two-pass pipeline (trim, palette build, GIF render), manages temp files, and emits structured logs/stdout/stderr for the UI. buildInputData serializes every EffectSettings field into WorkManager Data, so mismatched keys will surface as invalid_input failures early.
+
+Blend Workers BaseBlendWorker is the reusable harness for any two-input GIF blend: it resolves content/file/data-URI sources, constructs a canonical 1280×720 padded blend graph, executes FFmpegKit with the generated filter graph, and standardizes error payloads (exit code, stderr tail). Override parseInputs and buildSuccessResult when adding new blend behaviors.
+GifBlendWorker adds the per-layer context (layer id, mode, opacity) and packages the resulting GIF URI into the WorkManager result bundle.
+
+MasterBlendWorker reuses the base logic without a layer id, producing the final composite that merges Layer 1 and Layer 2 outputs.
+
+Work Coordination Utilities GifProcessingCoordinator resolves DocumentTree outputs for exports and wraps WorkManager scheduling so the UI only deals with GifTranscodeBlueprint identifiers; it also exposes a helper to map integer progress into the shared GifWorkProgress type.
+
+Presentation & State Management (feature:home) GifVisionViewModel emits HomeUiState through a StateFlow, tracks log entries, and maintains in-memory work registries to synchronize Compose state with background work.
+
+Video import uses the SAF URI, copies content into filesDir/sources, extracts metadata with MediaMetadataRetriever, and seeds per-stream EffectSettings with defaults plus detected frame rate.
+
+UI callbacks (clip range, resolution, colour sliders, experimental toggles, blend sliders) all fan into updateActiveStreamSettings, keeping state updates atomic and layer-aware.
+
+Rendering and blending requests enqueue WorkManager jobs, log telemetry, and store work ids so Compose can disable buttons and show progress. Pass-through behavior avoids unnecessary blending when only one stream is ready.
+
+Progress simulation fills gaps between WorkManager updates so progress bars animate smoothly; observers cancel once jobs finish to avoid leaks.
+
+Failure handlers normalize WorkManager results into human-readable status messages and log entries, attaching stderr tails from the workers so the FFmpeg log panel mirrors the desktop experience.
+
+Master blend orchestration requires both layer blends to exist; otherwise, the view model warns the user and logs a warning severity entry.
+
+recordLog truncates log history to the latest 50 items and ensures stdout/stderr payloads are trimmed for readability before surfacing to the UI.
+
+UI Contract (feature:home) HomeUiState defines every card shown on the home screen: upload cards, adjustments accordion, stream previews, layer blend previews, and master blend, with a preview() factory for Compose previews and screenshot tests.
+GifExportTarget centralizes naming conventions for stream, layer, and master exports so saving/sharing always generates deterministic filenames and labels.
+
+Application Shell (app) MainActivity hosts Compose, wires GifProcessingCoordinator into HomeRoute, and forwards all adjustment intents back to the view model. It also registers the SAF picker launcher for video selection.
+Export handlers persist GIFs into MediaStore.Downloads, reuse a cache-backed FileProvider for sharing, and fall back to base64 decoding when the reference is an in-memory data URI.
+
+Testing & Verification FilterGraphBuilderTest validates the filter chain ordering, palette usage, experimental toggles, and overlay sanitization; extend this suite when modifying FFmpeg filters to catch regressions early.
+Combine unit tests with Detekt/Spotless (./gradlew detekt spotlessCheck) and module tests (./gradlew test connectedAndroidTest) to cover both background processing and UI logic; wire those commands into CI for repeatable verification.
+
+11.1 CLI pipeline harness The repository ships with a JVM-based CLI (:tooling:cli) that exercises the same filter graph and two-pass FFmpeg pipeline used by GifGenerationWorker. Desktop runs now call the system ffmpeg command by default (with --ffmpeg /path/to/ffmpeg available for custom installs), so validation no longer depends on the Android asset bundle:
+
+./gradlew :tooling:cli:run --args "--generate-sample --output build/cli/sample.gif"
+Passing --input /path/to/video.mp4 reuses an existing clip, while omitting it generates a testsrc pattern automatically. Additional flags (--start-ms, --duration-ms, --scale-percent) mirror the adjustments panel so developers can reproduce edge cases that previously required the Compose UI. The harness validates that FFmpeg is reachable on the host (failing fast if the command cannot be executed), probes metadata, and writes the resulting GIF to build/cli by default.
+
+Troubleshooting Playbook Worker-level failures surface failure_reason, failure_detail, exit codes, and stderr tails. Inspect these fields first when investigating broken renders or blends, then escalate to full stdout/stderr logs captured in the success/failure payloads.
+The view model funnels worker diagnostics into user-facing messages and log history, so QA can reproduce issues straight from the device without adb access.
+
+When workers never start, ensure FFmpegKit initialized successfully (Application.onCreate should call FfmpegKitInitializer.initialize). A missing native package or initialization failure raises ffmpeg_prepare_failed before any progress updates occur.
+
+Operational Checklist Before shipping a build, confirm FFmpegKit continues to initialize on cold start, keep the docs/THIRD_PARTY_NOTICES.md entry up to date, run Detekt/Spotless, execute unit tests, and perform an end-to-end render (two streams, layer blend, master blend) to validate WorkManager pipelines, save/share flows, and scoped storage exports.
