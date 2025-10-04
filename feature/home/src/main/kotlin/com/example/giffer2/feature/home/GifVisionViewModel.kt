@@ -327,6 +327,10 @@ class GifVisionViewModel(
         }
     }
 
+    fun onPageSelected(page: HomePage) {
+        _uiState.update { it.copy(activePage = page) }
+    }
+
     override fun onCleared() {
         super.onCleared()
         streamJobs.values.forEach(Job::cancel)

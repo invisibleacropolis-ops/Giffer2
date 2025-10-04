@@ -23,6 +23,7 @@ import java.util.UUID
 data class HomeUiState(
     val layers: Map<LayerId, LayerUiState> = emptyMap(),
     val masterBlend: MasterBlendUiState = MasterBlendUiState(),
+    val activePage: HomePage = HomePage.Layer1,
     val logEntries: List<LogEntry> = emptyList(),
     val isLogExpanded: Boolean = false,
     val hasWarnings: Boolean = false,
