@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +62,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.mimeTypes
+import androidx.compose.ui.draganddrop.toAndroidDragEvent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -414,26 +419,38 @@ private fun LayerPage(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UploadCard(
     layerState: LayerUiState,
     onBrowseFiles: (LayerId) -> Unit,
     onDropUri: (LayerId, Uri) -> Unit
 ) {
+    val currentOnDropUri = rememberUpdatedState(onDropUri)
+    val dropTarget = remember(layerState.layerId) {
+        val layerId = layerState.layerId
+        object : DragAndDropTarget {
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                val clipData = event.toAndroidDragEvent().clipData ?: return false
+                if (clipData.itemCount == 0) {
+                    return false
+                }
+                val uri = clipData.getItemAt(0).uri ?: return false
+                currentOnDropUri.value(layerId, uri)
+                return true
+            }
+        }
+    }
     ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .dragAndDropTarget(
                 shouldStartDragAndDrop = { event ->
-                    event.mimeTypes?.any { it.startsWith("image/") || it.startsWith("video/") } == true
-                },
-                onDrop = { _, event ->
-                    val uri = event.clipData?.getItemAt(0)?.uri
-                    if (uri != null) {
-                        onDropUri(layerState.layerId, uri)
+                    event.mimeTypes().any { mime ->
+                        mime.startsWith("image/") || mime.startsWith("video/")
                     }
-                    true
-                }
+                },
+                target = dropTarget
             )
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
@@ -471,10 +488,11 @@ private fun VideoPreviewCard(layerState: LayerUiState) {
                 style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(12.dp))
-            if (layerState.source != null) {
-                val uri = when (val reference = layerState.source) {
-                    is GifReference.ContentUri -> Uri.parse(reference.uri)
-                    is GifReference.FileUri -> Uri.parse(reference.uri)
+            val source = layerState.source
+            if (source != null) {
+                val uri = when (source) {
+                    is GifReference.ContentUri -> Uri.parse(source.uri)
+                    is GifReference.FileUri -> Uri.parse(source.uri)
                     is GifReference.InMemory -> null
                 }
                 if (uri != null) {
@@ -1242,7 +1260,7 @@ private suspend fun importClip(context: Context, uri: Uri): ImportedClip? {
             null, "file" -> GifReference.FileUri(uri.toString())
             else -> GifReference.ContentUri(uri.toString())
         }
-        val label = context.contentResolver.queryDisplayName(uri)
+        val label = context.queryDisplayName(uri)
         if (DocumentsContract.isDocumentUri(context, uri)) {
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -1275,8 +1293,9 @@ private suspend fun readClipMetadata(context: Context, uri: Uri): ClipMetadata? 
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
             val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
             val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
-            val frameRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull()
-                ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_RATE)?.toDoubleOrNull()
+            val frameRate = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                ?.toDoubleOrNull()
             ClipMetadata(width = width, height = height, durationMillis = duration, frameRate = frameRate)
         } catch (error: Exception) {
             null
@@ -1285,5 +1304,3 @@ private suspend fun readClipMetadata(context: Context, uri: Uri): ClipMetadata? 
         }
     }
 }
-
-*** End of File

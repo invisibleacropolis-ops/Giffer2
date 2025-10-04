@@ -1,13 +1,10 @@
 package com.example.gifvision.ffmpeg
 
-import com.arthenica.ffmpegkit.ExecuteCallback
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegSession
 import com.arthenica.ffmpegkit.Level
 import com.arthenica.ffmpegkit.Log
-import com.arthenica.ffmpegkit.LogCallback
 import com.arthenica.ffmpegkit.Statistics
-import com.arthenica.ffmpegkit.StatisticsCallback
 import java.util.Locale
 
 /**
@@ -30,13 +27,13 @@ class FfmpegKitCommandRunner(
     fun execute(command: String, callbacks: Callbacks = Callbacks()): FFmpegSession {
         return adapter.executeAsync(
             command = command,
-            complete = ExecuteCallback { session ->
+            complete = { session ->
                 callbacks.onComplete(session)
             },
-            log = LogCallback { log ->
+            log = { log ->
                 handleLog(log, callbacks)
             },
-            statistics = StatisticsCallback { statistics ->
+            statistics = { statistics ->
                 callbacks.onStatistics(statistics)
             }
         )
@@ -69,19 +66,24 @@ class FfmpegKitCommandRunner(
     fun interface FfmpegKitAdapter {
         fun executeAsync(
             command: String,
-            complete: ExecuteCallback,
-            log: LogCallback,
-            statistics: StatisticsCallback
+            complete: (FFmpegSession) -> Unit,
+            log: (Log?) -> Unit,
+            statistics: (Statistics) -> Unit
         ): FFmpegSession
 
         object Default : FfmpegKitAdapter {
             override fun executeAsync(
                 command: String,
-                complete: ExecuteCallback,
-                log: LogCallback,
-                statistics: StatisticsCallback
+                complete: (FFmpegSession) -> Unit,
+                log: (Log?) -> Unit,
+                statistics: (Statistics) -> Unit
             ): FFmpegSession {
-                return FFmpegKit.executeAsync(command, complete, log, statistics)
+                return FFmpegKit.executeAsync(
+                    command,
+                    { session -> complete(session) },
+                    { entry: Log? -> log(entry) },
+                    { stats -> statistics(stats) }
+                )
             }
         }
     }

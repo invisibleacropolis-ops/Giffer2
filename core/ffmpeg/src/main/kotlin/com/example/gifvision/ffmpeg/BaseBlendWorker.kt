@@ -31,7 +31,7 @@ abstract class BaseBlendWorker<I : BaseBlendWorker.BlendInputs>(
     workerParameters: WorkerParameters
 ) : CoroutineWorker(appContext, workerParameters) {
 
-    protected interface BlendInputs {
+    interface BlendInputs {
         val primaryUri: String
         val secondaryUri: String
         val blendMode: BlendMode
