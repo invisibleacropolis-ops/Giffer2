@@ -3,14 +3,15 @@
 Welcome to GifVision! This guide will walk you through everything you need to know to start creating amazing GIFs from your videos.
 
 ## 1. Introduction
+> **System Requirement:** GifVision ships with FFmpegKit from `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1` and will not function with any other FFmpeg distribution. Do not sideload or attempt to swap native binaries.
 
 GifVision is a powerful and creative tool that transforms your videos into unique animated GIFs. With a wide array of effects, blending modes, and a unique layering system, you can unleash your creativity and produce truly stunning visual art.
 
 ## 2. Getting Started: Your First GIF
 
-Creating a GIF is a simple process. Here’s a quick guide to get you started:
+Creating a GIF is a simple process. HereÂ’s a quick guide to get you started:
 
-1.  **Upload a Video:** In **Layer 1**, click on "Browse Files" or drag and drop a video file into the upload area. You can also replace an existing clip at any time by using the **Change** action in the upload card—this opens the same file picker so you can swap sources without leaving the workflow.
+1.  **Upload a Video:** In **Layer 1**, click on "Browse Files" or drag and drop a video file into the upload area. You can also replace an existing clip at any time by using the **Change** action in the upload cardÂ—this opens the same file picker so you can swap sources without leaving the workflow.
 2.  **Select a Clip:** Use the video preview player to find the part of the video you want to turn into a GIF. Use the **Clip Duration** slider in the **Adjustments** panel to trim your video.
 3.  **Generate:** Click the **Generate GIF** button in the **Preview (Layer 1 Source A)** card.
 
@@ -29,7 +30,7 @@ GifVision uses a unique system of **Layers** and **Streams** to give you maximum
 
 You can switch between Streams using the toggle buttons in the **Adjustments** panel.
 
-### MAIN PAGES (lAYER 1 and LAYER 2 – each page is the same as the other)
+### MAIN PAGES (lAYER 1 and LAYER 2 Â– each page is the same as the other)
 
 *   **Upload Card:** This is where you upload your source video for each layer. Each card provides a drag-and-drop zone as well as a **Browse Files** button so you can pick clips however you prefer. If you already have a clip loaded, the card shows its filename alongside a **Change** button; selecting **Change** lets you pick a replacement file immediately.
 *   **Video Preview:** Once a video is uploaded, you can play it here and scrub through to find the perfect segment for your GIF.
@@ -96,7 +97,7 @@ GifVision's blending capabilities allow you to combine your GIFs in creative way
 The **Master Blend** card appears as soon as at least one layer has footage uploaded, but the controls only become active after both Layer 1 and Layer 2 have finished rendering their individual blended GIFs. At that point you can:
 
 1.  Open the **Blend Mode** dropdown to choose how the two layer outputs are composited together. The options mirror the layer-level blending choices so you can stay consistent or experiment with new combinations.
-2.  Drag the **Opacity** slider (0.00–1.00) to balance how much of Layer 2 shows through over Layer 1. The numeric readout next to the label updates in real time so you can dial in precise values before generating the final mix.
+2.  Drag the **Opacity** slider (0.00Â–1.00) to balance how much of Layer 2 shows through over Layer 1. The numeric readout next to the label updates in real time so you can dial in precise values before generating the final mix.
 3.  Press **Generate Master Blend** to send the request to the backend. While processing, the card locks to prevent duplicate submissions and the progress bar reports rendering status until the finished GIF preview appears.
 
 ## 6. Saving and Sharing
@@ -106,6 +107,8 @@ Once the master blended GIF is ready, click **Save** to download it locally. The
 ## 7. Troubleshooting
 
 If you run into any issues, here are a few things to check:
+
+*   **Library integrity:** Confirm the application is still using `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1`. The app is unsupported with any other FFmpeg builds.
 
 *   **"GIF Generation Failed" error:**
     1.  **Check the FFmpeg Logs:** This is the most important step. The logs will almost always contain the specific error message from FFmpeg.

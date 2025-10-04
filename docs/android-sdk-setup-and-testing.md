@@ -2,6 +2,8 @@
 
 This document captures the exact steps used to provision the Android SDK in the containerized workspace and to execute the project's unit test suite. It is intended to help other engineers reproduce the setup quickly and to highlight any noteworthy observations from the run.
 
+> **Library Policy:** All builds and tests must use FFmpegKit from `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1`. Alternate FFmpeg packages are not permitted in this workspace.
+
 ## Environment
 
 - **Host OS:** Debian-based container image supplied by the execution environment

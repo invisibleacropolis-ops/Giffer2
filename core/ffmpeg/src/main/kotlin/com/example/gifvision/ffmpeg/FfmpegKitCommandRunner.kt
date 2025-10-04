@@ -12,7 +12,9 @@ import java.util.Locale
 
 /**
  * Thin wrapper around [FFmpegKit.executeAsync] that exposes typed callbacks for the
- * GifVision worker layer.
+ * GifVision worker layer. The backing implementation is **always** provided by
+ * `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1`; introducing other FFmpeg bridges is
+ * unsupported because initialization, logging, and licensing policies are tuned to that artifact.
  */
 class FfmpegKitCommandRunner(
     private val adapter: FfmpegKitAdapter = FfmpegKitAdapter.Default

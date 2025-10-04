@@ -35,8 +35,7 @@ error scenarios and understand where to extend the workflow.
 
 - Additional validation (for example, MIME allow lists or maximum duration checks) should
   be implemented in `extractVideoMetadata` to centralise failures.
-- When adding new FFmpeg variants, leverage the existing log sink to avoid regressing the
-  UI-driven log viewer.
+- Do **not** introduce alternative FFmpeg variants. All processing must continue to route through `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1`; leverage the existing log sink to avoid regressing the UI-driven log viewer.
 - The conversion scope lives in a shared `CoroutineScope` (`SupervisorJob` + `Dispatchers.IO`).
   If lifecycle-aware cancellation is introduced in the future, wire a `Job` from the host
   activity into `conversionScope` to keep background work scoped appropriately.
