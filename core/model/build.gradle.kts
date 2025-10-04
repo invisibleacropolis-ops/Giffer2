@@ -8,4 +8,5 @@ kotlin {
 
 dependencies {
     // Kotlin stdlib is added automatically; additional dependencies can be declared here when needed.
+    implementation(libs.androidx.work.runtime.ktx)
 }
