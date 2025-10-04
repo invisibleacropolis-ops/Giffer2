@@ -1,14 +1,22 @@
 package com.example.giffer2.feature.home.processing
 
+import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
 import androidx.annotation.VisibleForTesting
+import androidx.core.content.FileProvider
 import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.getWorkInfoByIdFlow
 import androidx.work.workDataOf
+import com.example.gifvision.GifExportTarget
 import com.example.gifvision.BlendMode
 import com.example.gifvision.GifTranscodeBlueprint
 import com.example.gifvision.GifWorkDataKeys
@@ -26,9 +34,10 @@ import com.example.gifvision.ffmpeg.MasterBlendWorker
 import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
+import java.io.ByteArrayInputStream
 import java.io.InputStream
-import java.util.Locale
 import java.util.UUID
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -71,6 +80,19 @@ class GifProcessingCoordinator(
         val progress: StateFlow<GifWorkProgress>
     )
 
+    /** Result payload when persisting into MediaStore downloads. */
+    data class SaveResult(
+        val uri: Uri,
+        val fileName: String
+    )
+
+    /** Result payload surfaced when preparing a share intent. */
+    data class ShareResult(
+        val uri: Uri,
+        val mimeType: String,
+        val displayName: String
+    )
+
     private val coordinatorScope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     private val workObservers = ConcurrentHashMap<UUID, Job>()
@@ -79,6 +101,7 @@ class GifProcessingCoordinator(
 
     private val sourcesDirectory: File = File(appContext.filesDir, "sources").apply { mkdirs() }
     private val exportsDirectory: File = File(appContext.filesDir, "exports").apply { mkdirs() }
+    private val fileProviderAuthority: String = "${appContext.packageName}.fileprovider"
 
     private val _logEntries = MutableStateFlow<List<LogEntry>>(emptyList())
     val logEntries: StateFlow<List<LogEntry>> = _logEntries.asStateFlow()
@@ -275,23 +298,88 @@ class GifProcessingCoordinator(
     ) {
         val uriToken = outputData.getString(GifWorkDataKeys.KEY_OUTPUT_GIF_URI) ?: return
         val streamId = descriptor.blueprint.streamId
-        val destination = File(sourcesDirectory, streamOutputName(streamId))
+        val destination = cacheFileFor(GifExportTarget.StreamPreview(streamId))
         copyUriToFile(Uri.parse(uriToken), destination)
         _streamOutputs.update { current -> current + (streamId to Uri.fromFile(destination)) }
     }
 
     private suspend fun handleLayerBlendSuccess(layerId: LayerId, outputData: Data) {
         val uriToken = outputData.getString(GifWorkDataKeys.KEY_OUTPUT_GIF_URI) ?: return
-        val destination = File(exportsDirectory, layerBlendName(layerId))
+        val destination = cacheFileFor(GifExportTarget.LayerBlend(layerId))
         copyUriToFile(Uri.parse(uriToken), destination)
         _layerBlendOutputs.update { current -> current + (layerId to Uri.fromFile(destination)) }
     }
 
     private suspend fun handleMasterBlendSuccess(masterLabel: String, outputData: Data) {
         val uriToken = outputData.getString(GifWorkDataKeys.KEY_OUTPUT_GIF_URI) ?: return
-        val destination = File(exportsDirectory, masterBlendName(masterLabel))
+        val destination = cacheFileFor(GifExportTarget.MasterBlend)
         copyUriToFile(Uri.parse(uriToken), destination)
         _masterBlendOutput.value = Uri.fromFile(destination)
+    }
+
+    suspend fun saveToDownloads(target: GifExportTarget, sourceUri: Uri): SaveResult {
+        return withContext(ioDispatcher) {
+            val resolver = appContext.contentResolver
+            val displayName = target.mediaStoreFileName
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+                put(MediaStore.MediaColumns.MIME_TYPE, GifExportTarget.MIME_TYPE_GIF)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(
+                        MediaStore.MediaColumns.RELATIVE_PATH,
+                        Environment.DIRECTORY_DOWNLOADS + File.separator + target.downloadsRelativePath
+                    )
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+            }
+
+            val downloadsCollection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val itemUri = resolver.insert(downloadsCollection, values)
+                ?: error("Unable to create MediaStore entry for ${target.displayName}")
+
+            try {
+                resolver.openOutputStream(itemUri)?.use { output ->
+                    openInputStream(sourceUri)?.use { input ->
+                        input.copyTo(output)
+                    } ?: error("Unable to open input stream for $sourceUri")
+                } ?: error("Unable to open output stream for $itemUri")
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val pendingUpdate = ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    }
+                    resolver.update(itemUri, pendingUpdate, null, null)
+                }
+            } catch (t: Throwable) {
+                resolver.delete(itemUri, null, null)
+                throw t
+            }
+
+            SaveResult(uri = itemUri, fileName = displayName)
+        }
+    }
+
+    suspend fun prepareShare(target: GifExportTarget, sourceUri: Uri): ShareResult {
+        val shareUri = when (sourceUri.scheme?.lowercase(Locale.US)) {
+            null, ContentResolver.SCHEME_FILE -> {
+                val file = when (sourceUri.scheme?.lowercase(Locale.US)) {
+                    null -> File(sourceUri.toString())
+                    else -> File(sourceUri.path.orEmpty())
+                }
+                if (!file.exists()) {
+                    error("Cached GIF missing for ${target.displayName} at ${file.path}")
+                }
+                FileProvider.getUriForFile(appContext, fileProviderAuthority, file)
+            }
+            ContentResolver.SCHEME_CONTENT -> sourceUri
+            "data" -> sourceUri
+            else -> sourceUri
+        }
+        return ShareResult(
+            uri = shareUri,
+            mimeType = GifExportTarget.MIME_TYPE_GIF,
+            displayName = target.displayName
+        )
     }
 
     private suspend fun copyUriToFile(uri: Uri, destination: File) = withContext(ioDispatcher) {
@@ -306,8 +394,22 @@ class GifProcessingCoordinator(
     private fun openInputStream(uri: Uri): InputStream? {
         return when (uri.scheme?.lowercase(Locale.US)) {
             null, "file" -> File(uri.path.orEmpty()).takeIf(File::exists)?.inputStream()
+            "data" -> decodeDataUri(uri)
             else -> appContext.contentResolver.openInputStream(uri)
         }
+    }
+
+    private fun decodeDataUri(uri: Uri): InputStream? {
+        val data = uri.schemeSpecificPart ?: return null
+        val base64Index = data.indexOf("base64,")
+        val encoded = if (base64Index >= 0) {
+            data.substring(base64Index + "base64,".length)
+        } else {
+            data
+        }
+        if (encoded.isEmpty()) return ByteArrayInputStream(ByteArray(0))
+        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+        return ByteArrayInputStream(bytes)
     }
 
     private fun buildCompletionMessage(descriptor: WorkDescriptor, state: WorkInfo.State): String {
@@ -341,16 +443,13 @@ class GifProcessingCoordinator(
             .forEach { workId -> cancel(workId) }
     }
 
-    private fun streamOutputName(streamId: StreamId): String {
-        return "layer${streamId.layer.index}_${streamId.channel.name.lowercase(Locale.US)}.gif"
-    }
-
-    private fun layerBlendName(layerId: LayerId): String {
-        return "layer${layerId.index}_blend.gif"
-    }
-
-    private fun masterBlendName(masterLabel: String): String {
-        return masterLabel.replace(" ", "_").lowercase(Locale.US) + ".gif"
+    private fun cacheFileFor(target: GifExportTarget): File {
+        val directory = when (target) {
+            is GifExportTarget.StreamPreview -> sourcesDirectory
+            is GifExportTarget.LayerBlend -> exportsDirectory
+            GifExportTarget.MasterBlend -> exportsDirectory
+        }
+        return File(directory, target.cacheFileName)
     }
 
     private sealed interface WorkDescriptor {
