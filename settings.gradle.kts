@@ -21,3 +21,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "Giffer2"
 include(":app")
+include(":core:model")
+include(":core:ffmpeg")
+include(":feature:home")
