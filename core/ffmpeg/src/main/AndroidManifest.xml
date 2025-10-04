@@ -1,2 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest package="com.example.giffer2.core.ffmpeg" />
+<manifest package="com.example.giffer2.core.ffmpeg"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <meta-data
+            android:name="com.example.gifvision.ffmpeg.GifGenerationWorker"
+            android:value="worker" />
+        <meta-data
+            android:name="com.example.gifvision.ffmpeg.GifBlendWorker"
+            android:value="worker" />
+        <meta-data
+            android:name="com.example.gifvision.ffmpeg.MasterBlendWorker"
+            android:value="worker" />
+    </application>
+
+</manifest>
