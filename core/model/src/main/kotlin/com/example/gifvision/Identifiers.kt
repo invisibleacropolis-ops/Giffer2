@@ -13,7 +13,8 @@ value class LayerId private constructor(val index: Int) : Comparable<LayerId> {
     }
 
     /** Display label used by UI and logging. */
-    val displayName: String = "Layer $index"
+    val displayName: String
+        get() = "Layer $index"
 
     override fun compareTo(other: LayerId): Int = index.compareTo(other.index)
 
@@ -61,7 +62,8 @@ value class StreamId internal constructor(private val packed: Int) {
             StreamChannel.B
         }
 
-    val displayName: String = "${layer.displayName} ${channel.displayName}"
+    val displayName: String
+        get() = "${layer.displayName} ${channel.displayName}"
 
     override fun toString(): String = displayName
 
@@ -127,4 +129,3 @@ sealed interface GifReference {
         override val label: String = fileNameHint ?: "in_memory.gif"
     }
 }
-

@@ -1,0 +1,1 @@
+com.example.giffer2.core.ffmpeg

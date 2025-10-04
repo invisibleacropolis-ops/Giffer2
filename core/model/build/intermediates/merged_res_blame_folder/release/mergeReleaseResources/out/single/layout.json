@@ -1,0 +1,14 @@
+[
+    {
+        "merged": "com.example.giffer2.core.model-release-3:/layout/notification_template_part_chronometer.xml",
+        "source": "com.example.giffer2.core.model-core-1.9.0-10:/layout/notification_template_part_chronometer.xml"
+    },
+    {
+        "merged": "com.example.giffer2.core.model-release-3:/layout/custom_dialog.xml",
+        "source": "com.example.giffer2.core.model-core-1.9.0-10:/layout/custom_dialog.xml"
+    },
+    {
+        "merged": "com.example.giffer2.core.model-release-3:/layout/notification_template_part_time.xml",
+        "source": "com.example.giffer2.core.model-core-1.9.0-10:/layout/notification_template_part_time.xml"
+    }
+]

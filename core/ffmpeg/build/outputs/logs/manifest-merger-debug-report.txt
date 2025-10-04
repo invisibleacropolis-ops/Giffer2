@@ -1,0 +1,37 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:2:1-17:12
+INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:2:1-17:12
+	package
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:2:11-52
+		INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml
+	xmlns:android
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:3:5-63
+application
+ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:5:5-15:19
+meta-data#com.example.gifvision.ffmpeg.GifGenerationWorker
+ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:6:9-8:38
+	android:value
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:8:13-35
+	android:name
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:7:13-76
+meta-data#com.example.gifvision.ffmpeg.GifBlendWorker
+ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:9:9-11:38
+	android:value
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:11:13-35
+	android:name
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:10:13-71
+meta-data#com.example.gifvision.ffmpeg.MasterBlendWorker
+ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:12:9-14:38
+	android:value
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:14:13-35
+	android:name
+		ADDED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:13:13-74
+uses-sdk
+INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml
+INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml

@@ -1,0 +1,8 @@
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\kotlin\com\example\gifvision\ffmpeg\FilterGraphBuilder.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\kotlin\com\example\gifvision\ffmpeg\GifBlendWorker.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\kotlin\com\example\gifvision\ffmpeg\MasterBlendWorker.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\kotlin\com\example\gifvision\ffmpeg\BaseBlendWorker.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\kotlin\com\example\gifvision\ffmpeg\FfmpegKitCommandRunner.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\java\com\example\giffer2\core\ffmpeg\FfmpegKitInitializer.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\kotlin\com\example\gifvision\ffmpeg\GifGenerationWorker.kt
+C:\ANDRO\Giffer2\core\ffmpeg\src\main\java\com\example\giffer2\core\ffmpeg\FfmpegGifConverter.kt

@@ -1,0 +1,16 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml:2:13-83
+INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml:2:13-83
+	package
+		INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml
+	xmlns:android
+		ADDED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml:2:23-81
+uses-sdk
+INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml reason: use-sdk injection requested
+INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml
+INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml
+	android:targetSdkVersion
+		INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml
+	android:minSdkVersion
+		INJECTED from C:\ANDRO\Giffer2\core\model\build\intermediates\tmp\ProcessLibraryManifest\debug\tempAndroidManifest1320206388209461201.xml

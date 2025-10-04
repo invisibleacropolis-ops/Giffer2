@@ -1,0 +1,29 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.example.giffer2.core.ffmpeg" >
+4
+5    <uses-sdk android:minSdkVersion="26" />
+6
+7    <application>
+7-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:5:5-15:19
+8        <meta-data
+8-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:6:9-8:38
+9            android:name="com.example.gifvision.ffmpeg.GifGenerationWorker"
+9-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:7:13-76
+10            android:value="worker" />
+10-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:8:13-35
+11        <meta-data
+11-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:9:9-11:38
+12            android:name="com.example.gifvision.ffmpeg.GifBlendWorker"
+12-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:10:13-71
+13            android:value="worker" />
+13-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:11:13-35
+14        <meta-data
+14-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:12:9-14:38
+15            android:name="com.example.gifvision.ffmpeg.MasterBlendWorker"
+15-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:13:13-74
+16            android:value="worker" />
+16-->C:\ANDRO\Giffer2\core\ffmpeg\src\main\AndroidManifest.xml:14:13-35
+17    </application>
+18
+19</manifest>
