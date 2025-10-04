@@ -77,6 +77,7 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("Giffer2App", "MainActivity onCreate called") // Added for debugging
         enableEdgeToEdge()
         setContent {
             Giffer2Theme {
