@@ -1,10 +1,19 @@
 package com.example.giffer2
 
+import android.content.ContentValues
 import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -41,11 +50,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.ImageLoader
 import coil.compose.rememberAsyncImagePainter
 import coil.decode.GifDecoder
@@ -54,19 +64,15 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import com.arthenica.ffmpegkit.Statistics
 import com.example.giffer2.ui.theme.Giffer2Theme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import android.os.Build
-import android.content.ContentValues
-import android.provider.MediaStore
-import android.widget.MediaController
-import android.widget.VideoView
-import androidx.compose.ui.viewinterop.AndroidView
-import android.os.Handler
-import android.os.Looper
+import java.io.IOException
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -91,6 +97,7 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(false) }
     val logMessages = remember { mutableStateListOf<String>() }
     var isLogExpanded by remember { mutableStateOf(false) }
+    var previewErrorMessage by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -103,6 +110,7 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
             saveStatus = ""
             logMessages.clear()
             isLogExpanded = false
+            previewErrorMessage = null
         }
     )
 
@@ -131,7 +139,22 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
         videoUri?.let { uri ->
             Text("Selected: ${getFileName(context, uri) ?: "Unknown file"}")
             Spacer(modifier = Modifier.height(16.dp))
-            VideoPreview(uri = uri)
+            VideoPreview(
+                uri = uri,
+                onPlaybackStart = { previewErrorMessage = null },
+                onPlaybackError = { message ->
+                    previewErrorMessage = message
+                    conversionStatus = ""
+                }
+            )
+            previewErrorMessage?.let { errorMessage ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = errorMessage,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = {
                 isLoading = true
@@ -243,11 +266,49 @@ fun VideoToGifApp(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun VideoPreview(uri: Uri, modifier: Modifier = Modifier) {
+fun VideoPreview(
+    uri: Uri,
+    modifier: Modifier = Modifier,
+    onPlaybackStart: () -> Unit,
+    onPlaybackError: (String) -> Unit
+) {
     val videoViewHolder = remember { mutableStateOf<VideoView?>(null) }
+    val hasReportedError = remember(uri) { mutableStateOf(false) }
+    val hasReportedStart = remember(uri) { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         onDispose { videoViewHolder.value?.stopPlayback() }
+    }
+
+    fun handlePlaybackStart(mediaPlayer: MediaPlayer, view: VideoView) {
+        mediaPlayer.isLooping = true
+        if (!hasReportedStart.value) {
+            hasReportedStart.value = true
+            hasReportedError.value = false
+            onPlaybackStart()
+        }
+        view.start()
+        view.seekTo(1)
+    }
+
+    fun reportError(message: String): Boolean {
+        if (!hasReportedError.value) {
+            hasReportedError.value = true
+            hasReportedStart.value = false
+            videoViewHolder.value?.stopPlayback()
+            onPlaybackError(message)
+        }
+        return true
+    }
+
+    fun safeSetVideoUri(view: VideoView) {
+        try {
+            view.tag = uri.toString()
+            view.setVideoURI(uri)
+        } catch (exception: Exception) {
+            val readableMessage = exception.localizedMessage ?: exception.javaClass.simpleName
+            reportError("Unable to preview the selected video: $readableMessage")
+        }
     }
 
     Box(
@@ -265,28 +326,29 @@ fun VideoPreview(uri: Uri, modifier: Modifier = Modifier) {
                     val controller = MediaController(context)
                     controller.setAnchorView(this)
                     setMediaController(controller)
-                    tag = uri.toString()
-                    setVideoURI(uri)
                     setOnPreparedListener { mediaPlayer ->
-                        mediaPlayer.isLooping = true
-                        start()
-                        seekTo(1)
+                        handlePlaybackStart(mediaPlayer, this)
                     }
+                    setOnErrorListener { _, what, extra ->
+                        reportError("Unable to preview the selected video (MediaPlayer error $what/$extra).")
+                    }
+                    safeSetVideoUri(this)
                     videoViewHolder.value = this
                 }
             },
             update = { view ->
                 videoViewHolder.value = view
-                if (view.tag != uri.toString()) {
-                    view.tag = uri.toString()
-                    view.setVideoURI(uri)
-                }
                 view.setOnPreparedListener { mediaPlayer ->
-                    mediaPlayer.isLooping = true
-                    view.start()
-                    view.seekTo(1)
+                    handlePlaybackStart(mediaPlayer, view)
                 }
-                if (!view.isPlaying) {
+                view.setOnErrorListener { _, what, extra ->
+                    reportError("Unable to preview the selected video (MediaPlayer error $what/$extra).")
+                }
+                if (view.tag != uri.toString()) {
+                    hasReportedStart.value = false
+                    hasReportedError.value = false
+                    safeSetVideoUri(view)
+                } else if (!view.isPlaying && !hasReportedError.value) {
                     view.start()
                 }
             }
@@ -310,6 +372,85 @@ fun GifPreview(gifPath: String, imageLoader: ImageLoader, modifier: Modifier = M
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit
         )
+    }
+}
+
+private val conversionScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+data class VideoMetadata(
+    val displayName: String?,
+    val sizeBytes: Long?,
+    val durationMillis: Long?,
+    val width: Int?,
+    val height: Int?
+)
+
+fun extractVideoMetadata(context: Context, uri: Uri): Result<VideoMetadata> {
+    return runCatching {
+        var displayName: String? = null
+        var sizeBytes: Long? = null
+        context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    displayName = cursor.getString(nameIndex)
+                }
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+                    sizeBytes = cursor.getLong(sizeIndex)
+                }
+            }
+        }
+
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(context, uri)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+
+            if (duration == null || duration <= 0) {
+                throw IllegalArgumentException("The selected file is missing required video duration metadata.")
+            }
+
+            VideoMetadata(
+                displayName = displayName,
+                sizeBytes = sizeBytes,
+                durationMillis = duration,
+                width = width,
+                height = height
+            )
+        } finally {
+            retriever.release()
+        }
+    }
+}
+
+fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024 && unitIndex < units.lastIndex) {
+        value /= 1024
+        unitIndex++
+    }
+    return String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+}
+
+fun formatDuration(durationMillis: Long): String {
+    if (durationMillis <= 0) return "0 s"
+    val seconds = durationMillis / 1000.0
+    return if (seconds >= 60) {
+        String.format(Locale.US, "%.1f min", seconds / 60.0)
+    } else {
+        String.format(Locale.US, "%.1f s", seconds)
     }
 }
 
@@ -392,81 +533,120 @@ fun convertVideoToGif(
         mainHandler.post { callback(path, error) }
     }
 
-    val tempVideoFile = createTempFileFromUri(context, videoUri, "input_video")
-    if (tempVideoFile == null) {
-        postResult(null, "Failed to create temporary video file from URI.")
-        return
-    }
-
-    val outputDir = File(context.cacheDir, "gifs")
-    if (!outputDir.exists()) {
-        outputDir.mkdirs()
-    }
-    val outputGifFile = File(outputDir, "output_${System.currentTimeMillis()}.gif")
-    val outputPath = outputGifFile.absolutePath
-
-    // FFmpeg command: -i input_video_path -vf "fps=10,scale=320:-1:flags=lanczos" -c:v gif -y output_gif_path
-    // -y overwrites output file if it exists
-    // fps=10: sets GIF to 10 frames per second
-    // scale=320:-1: resizes width to 320px, height is auto-adjusted maintaining aspect ratio
-    // flags=lanczos: lanczos resampling algorithm for scaling, good quality
-    val command = "-i \"${tempVideoFile.absolutePath}\" -vf \"fps=10,scale=320:-1:flags=lanczos\" -c:v gif -y \"$outputPath\""
-
-    postLog("Temporary input copied to: ${tempVideoFile.absolutePath}")
-    postLog("GIF will be written to: $outputPath")
-    postLog("Executing command: $command")
-
-    FFmpegKit.executeAsync(
-        command,
-        { session ->
-            val returnCode = session.returnCode
-            postLog("FFmpeg process exited with state ${session.state} and rc $returnCode")
-
-            tempVideoFile.delete() // Clean up temp video file
-
-            if (ReturnCode.isSuccess(returnCode)) {
-                postLog("GIF conversion successful: $outputPath")
-                postResult(outputPath, null)
-            } else if (ReturnCode.isCancel(returnCode)) {
-                postLog("GIF conversion cancelled.")
-                postResult(null, "Conversion cancelled.")
-            } else {
-                postLog("GIF conversion failed. RC: $returnCode. Error: ${session.failStackTrace}")
-                postResult(null, "Conversion failed (RC: $returnCode). Check logs.")
-            }
-        },
-        { log ->
-            log.message?.let { message ->
-                if (message.isNotBlank()) {
-                    postLog(message)
-                }
-            }
-        },
-        { statistics: Statistics ->
-            postLog(
-                "Statistics - time: ${statistics.time}, bitrate: ${statistics.bitrate}, " +
-                    "speed: ${statistics.speed}, frame: ${statistics.videoFrameNumber}"
-            )
+    conversionScope.launch {
+        postLog("Validating selected video before conversion...")
+        val metadata = extractVideoMetadata(context, videoUri).getOrElse { throwable ->
+            postLog("Video validation failed: ${throwable.localizedMessage ?: throwable.javaClass.simpleName}")
+            postResult(null, "We couldn't read the selected video. Please choose a different file.")
+            return@launch
         }
-    )
+
+        postLog(
+            "Video metadata - name: ${metadata.displayName ?: "unknown"}, " +
+                "size: ${metadata.sizeBytes?.let { formatFileSize(it) } ?: "unknown"}, " +
+                "duration: ${metadata.durationMillis?.let { formatDuration(it) } ?: "unknown"}, " +
+                "dimensions: ${metadata.width ?: "?"}x${metadata.height ?: "?"}"
+        )
+
+        val tempVideoFile = createTempFileFromUri(context, videoUri, "input_video").getOrElse { throwable ->
+            postLog("Failed to cache video locally: ${throwable.localizedMessage ?: throwable.javaClass.simpleName}")
+            postResult(null, "Unable to prepare the selected video for conversion. Please try again.")
+            return@launch
+        }
+
+        postLog(
+            "Temporary input copied to: ${tempVideoFile.absolutePath} " +
+                "(${formatFileSize(tempVideoFile.length())})"
+        )
+
+        val outputDir = File(context.cacheDir, "gifs")
+        if (!outputDir.exists()) {
+            if (outputDir.mkdirs()) {
+                postLog("Created GIF cache directory at ${outputDir.absolutePath}")
+            } else {
+                postLog("Failed to create GIF cache directory at ${outputDir.absolutePath}")
+                tempVideoFile.delete()
+                postResult(null, "Unable to prepare GIF output directory.")
+                return@launch
+            }
+        }
+
+        val outputGifFile = File(outputDir, "output_${System.currentTimeMillis()}.gif")
+        val outputPath = outputGifFile.absolutePath
+
+        val command = "-i \"${tempVideoFile.absolutePath}\" -vf \"fps=10,scale=320:-1:flags=lanczos\" -c:v gif -y \"$outputPath\""
+
+        postLog("GIF will be written to: $outputPath")
+        postLog("Executing command: $command")
+
+        FFmpegKit.executeAsync(
+            command,
+            { session ->
+                val returnCode = session.returnCode
+                postLog("FFmpeg process exited with state ${session.state} and rc $returnCode")
+
+                tempVideoFile.delete()
+
+                if (ReturnCode.isSuccess(returnCode)) {
+                    postLog("GIF conversion successful: $outputPath")
+                    postResult(outputPath, null)
+                } else if (ReturnCode.isCancel(returnCode)) {
+                    postLog("GIF conversion cancelled.")
+                    postResult(null, "Conversion cancelled.")
+                } else {
+                    postLog("GIF conversion failed. RC: $returnCode. Error: ${session.failStackTrace}")
+                    postResult(null, "Conversion failed (RC: $returnCode). Check logs.")
+                }
+            },
+            { log ->
+                log.message?.let { message ->
+                    if (message.isNotBlank()) {
+                        postLog(message)
+                    }
+                }
+            },
+            { statistics: Statistics ->
+                postLog(
+                    "Statistics - time: ${statistics.time}, bitrate: ${statistics.bitrate}, " +
+                        "speed: ${statistics.speed}, frame: ${statistics.videoFrameNumber}"
+                )
+            }
+        )
+    }
 }
 
-fun createTempFileFromUri(context: Context, uri: Uri, prefix: String): File? {
-    return try {
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            val extension = getFileExtensionFromUri(context, uri) ?: "tmp"
-            // Ensure a valid extension, default to .tmp if URI doesn't provide one
-            val safeExtension = if (extension.isBlank() || extension.length > 5) "tmp" else extension
-            val tempFile = File.createTempFile("${prefix}_", ".$safeExtension", context.cacheDir)
+fun createTempFileFromUri(context: Context, uri: Uri, prefix: String): Result<File> {
+    return runCatching {
+        val extension = getFileExtensionFromUri(context, uri) ?: "tmp"
+        val safeExtension = if (extension.isBlank() || extension.length > 5) "tmp" else extension
+        val tempFile = File.createTempFile("${prefix}_", ".$safeExtension", context.cacheDir)
 
+        val totalBytes = context.contentResolver.openInputStream(uri)?.use { inputStream ->
             FileOutputStream(tempFile).use { fos ->
-                inputStream.copyTo(fos)
+                val copied = inputStream.copyTo(fos)
+                try {
+                    fos.fd.sync()
+                } catch (ignored: IOException) {
+                    // sync may fail on some filesystems; swallow but retain copied bytes count
+                }
+                copied
             }
-            tempFile
+        } ?: throw IOException("Unable to open input stream for URI: $uri")
+
+        if (totalBytes <= 0L) {
+            tempFile.delete()
+            throw IOException("No bytes were read from the provided URI.")
         }
-    } catch (e: Exception) {
-        Log.e("CreateTempFile", "Error creating temp file from URI: $uri", e)
-        null
+
+        if (!tempFile.exists() || tempFile.length() <= 0L) {
+            val existingLength = tempFile.length()
+            tempFile.delete()
+            throw IOException("Cached video file is empty (length=$existingLength).")
+        }
+
+        tempFile
+    }.onFailure { throwable ->
+        Log.e("CreateTempFile", "Error creating temp file from URI: $uri", throwable)
     }
 }
 
