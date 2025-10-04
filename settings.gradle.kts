@@ -11,6 +11,10 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
+}
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
@@ -25,12 +29,3 @@ include(":core:model")
 include(":core:ffmpeg")
 include(":feature:home")
 
-toolchainManagement {
-    jvm {
-        javaRepositories {
-            repository("foojay") {
-                url.set(uri("https://api.foojay.io/disco/v3.0/"))
-            }
-        }
-    }
-}
