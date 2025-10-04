@@ -22,7 +22,7 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation("com.arthenica:ffmpeg-kit-https:6.0-2.LTS")
+    implementation("io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1")
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
 

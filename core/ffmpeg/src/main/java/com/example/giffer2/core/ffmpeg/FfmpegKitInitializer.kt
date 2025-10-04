@@ -7,9 +7,11 @@ import com.arthenica.ffmpegkit.FFmpegKitConfig
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Centralizes one-time initialization for FFmpegKit so the native binaries are ready when the
- * UI attempts to start a conversion job. The initializer is idempotent and safe to call from the
- * application process as early as possible.
+ * Centralizes one-time initialization for FFmpegKit so the native binaries from
+ * `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1` are ready when the UI attempts to start a
+ * conversion job. The initializer is idempotent and safe to call from the application process as
+ * early as possible. **Do not** swap in any other FFmpeg distributionthe project is contractually
+ * tied to this artifact and runtime assumptions (ABI splits, logging, licensing) rely on it.
  */
 object FfmpegKitInitializer {
     private val initialized = AtomicBoolean(false)

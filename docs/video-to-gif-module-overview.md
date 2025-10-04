@@ -1,6 +1,10 @@
 # Video-to-GIF Workflow Overview
 
-The application logic lives in `MainActivity.kt` and is implemented with Jetpack Compose and FFmpegKit. This document summarizes the main responsibilities of each composable and helper routine to help new engineers navigate the codebase quickly.
+The application logic lives in `MainActivity.kt` and is implemented with Jetpack Compose and FFmpegKit (distributed exclusively via `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1`). This document summarizes the main responsibilities of each composable and helper routine to help new engineers navigate the codebase quickly.
+
+
+
+> **Important:** The GifVision pipeline must never depend on any FFmpeg build other than `io.github.jamaismagic.ffmpeg:ffmpeg-kit-lts-16kb:6.0.1`. Using alternative artifacts can break native initialization, licensing audits, and binary compatibility.
 
 ## UI Layer (Jetpack Compose)
 
